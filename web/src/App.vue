@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import Analysis from "./Analysis.vue";
 
 const TOKEN_KEY = "jifen_token";
 const LOG_KEEP = 400;
@@ -25,6 +26,17 @@ const showTiers = ref(false);
 const logFilter = ref("all");
 const follow = ref(true);
 const logBox = ref(null);
+
+const view = ref(location.hash === "#analysis" ? "analysis" : "overview");
+
+function onHash() {
+  view.value = location.hash === "#analysis" ? "analysis" : "overview";
+}
+
+function goOverview() {
+  history.pushState(null, "", location.pathname);
+  view.value = "overview";
+}
 
 let timers = [];
 
@@ -334,6 +346,10 @@ watch(shownLogs, () => {
   if (follow.value) toBottom();
 });
 
+watch(view, (v) => {
+  if (v === "overview") toBottom();
+});
+
 // ---- 生命周期 ----
 function onKey(ev) {
   if (ev.key === "Escape") {
@@ -365,12 +381,14 @@ onMounted(() => {
   pullLogs();
   schedule();
   window.addEventListener("keydown", onKey);
+  window.addEventListener("hashchange", onHash);
   document.addEventListener("visibilitychange", onVisible);
 });
 
 onUnmounted(() => {
   timers.forEach((t) => window.clearInterval(t));
   window.removeEventListener("keydown", onKey);
+  window.removeEventListener("hashchange", onHash);
   document.removeEventListener("visibilitychange", onVisible);
 });
 </script>
@@ -407,8 +425,16 @@ onUnmounted(() => {
       </div>
     </header>
 
+    <nav class="nav">
+      <a href="#" :class="{ act: view === 'overview' }" @click.prevent="goOverview">总览</a>
+      <a href="#analysis" :class="{ act: view === 'analysis' }">数据分析</a>
+    </nav>
+
     <p v-if="error" class="err banner">{{ error }}</p>
 
+    <Analysis v-if="view === 'analysis'" :api="api" :list-coins="listCoins" />
+
+    <template v-else>
     <section class="stats">
       <article>
         <span>账户余额</span>
@@ -652,6 +678,7 @@ onUnmounted(() => {
         <button v-if="!follow" class="to-bottom" @click="toBottom">↓ 回到最新</button>
       </div>
     </section>
+    </template>
 
     <div v-if="modal" class="mask" @click.self="modal = ''">
       <div class="sheet" role="dialog" :aria-label="modalTitle">
@@ -862,16 +889,6 @@ h1 {
   color: var(--muted);
 }
 
-.err {
-  color: var(--bad);
-}
-
-.banner {
-  border: 1px solid var(--bad);
-  padding: 8px 12px;
-  margin: 0 0 14px;
-}
-
 .stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -926,14 +943,6 @@ h1 {
   margin: 0 2px;
 }
 
-.good {
-  color: var(--mint);
-}
-
-.bad {
-  color: var(--bad);
-}
-
 .grid {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
@@ -941,32 +950,8 @@ h1 {
   margin-bottom: 12px;
 }
 
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  padding: 16px 18px 18px;
-  margin-bottom: 12px;
-}
-
 .grid .panel {
   margin-bottom: 0;
-}
-
-h2 {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 10px;
-  margin: 0 0 14px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--gold);
-}
-
-h2 small {
-  color: var(--muted);
-  font-weight: 400;
-  font-size: 12px;
 }
 
 .book {
@@ -1051,10 +1036,8 @@ h2 small {
   font-weight: 500;
 }
 
-.sub,
 .formula,
-.hint,
-.muted {
+.hint {
   color: var(--muted);
   font-size: 13px;
 }
@@ -1073,19 +1056,6 @@ h2 small {
 .params {
   margin-top: 12px;
   font-size: 12.5px;
-}
-
-button {
-  background: var(--bg-2);
-  color: var(--text);
-  border: 1px solid var(--line);
-  padding: 8px 14px;
-  cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 button.primary {
@@ -1139,37 +1109,30 @@ button.link {
   color: var(--muted);
 }
 
-.scroll-x {
-  overflow-x: auto;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
 table.compact {
   margin-top: 8px;
   font-size: 12.5px;
 }
 
-th,
-td {
-  text-align: left;
-  padding: 8px 6px;
+.nav {
+  display: flex;
+  gap: 2px;
+  margin: -8px 0 16px;
   border-bottom: 1px solid var(--line);
-  white-space: nowrap;
 }
 
-th {
+.nav a {
+  padding: 8px 16px;
   color: var(--muted);
-  font-weight: 500;
+  text-decoration: none;
+  font-size: 14px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
 }
 
-tr.cur td {
+.nav a.act {
   color: var(--gold);
+  border-bottom-color: var(--gold);
 }
 
 .tabs {

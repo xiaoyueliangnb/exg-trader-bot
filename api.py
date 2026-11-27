@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from collections import deque
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -271,6 +272,25 @@ def auth(request: Request) -> dict:
 def logs(since: int = 0) -> dict:
     seq, lines, reset = bot.lines_since(since)
     return {"running": bot.running(), "seq": seq, "reset": reset, "lines": lines}
+
+
+_analysis_cache: dict[int, tuple[float, dict]] = {}
+
+
+@app.get("/api/analysis")
+def analysis(days: int = 14) -> dict:
+    from analyze_market import NoDatabase, analyze
+
+    days = max(1, min(days, 365))
+    hit = _analysis_cache.get(days)
+    if hit and time.monotonic() - hit[0] < 60:
+        return hit[1]
+    try:
+        data = analyze(days)
+    except NoDatabase as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    _analysis_cache[days] = (time.monotonic(), data)
+    return data
 
 
 @app.post("/api/bot/start")
