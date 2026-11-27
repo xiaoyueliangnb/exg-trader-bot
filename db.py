@@ -608,6 +608,27 @@ def save_listing_submit(row: dict) -> None:
         conn.close()
 
 
+def load_market_latest() -> Optional[dict]:
+    """最近一轮盘口快照，控制台展示实盘用。"""
+    conn = _connect()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT ts, payload_json FROM market_snapshot ORDER BY id DESC LIMIT 1")
+            row = cur.fetchone()
+        if not row:
+            return None
+        payload = json.loads(row["payload_json"])
+        payload["ts"] = str(row["ts"])
+        return payload
+    except Exception as exc:
+        _warn(f"读盘口快照失败（{exc}）")
+        return None
+    finally:
+        conn.close()
+
+
 def sync_listing_track(now: str, opened: list[dict], closed: list[dict]) -> None:
     """自己的单：首次在「正在上架」看到记 first_seen，成交/赎回记 closed_at。
 

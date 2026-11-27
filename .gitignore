@@ -18,3 +18,4 @@ dddd_trainer/
 *.har
 .DS_Store
 market_log.jsonl
+logs/
