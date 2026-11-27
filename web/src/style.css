@@ -1,0 +1,31 @@
+:root {
+  --bg: #10140f;
+  --bg-2: #171d15;
+  --panel: #1c2419;
+  --line: #2c3826;
+  --text: #e7eadf;
+  --muted: #8b947c;
+  --gold: #d4b06a;
+  --mint: #8fbf7a;
+  --warn: #d08a5a;
+  --bad: #c45c4a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+}
