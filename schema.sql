@@ -50,3 +50,44 @@ CREATE TABLE IF NOT EXISTS day_detail (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (detail_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 每轮扫描的分档盘口快照（全部数量档，不只 10 币）
+CREATE TABLE IF NOT EXISTS market_snapshot (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  ts DATETIME NOT NULL,
+  payload_json LONGTEXT NOT NULL,
+  PRIMARY KEY (id),
+  KEY idx_ts (ts)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 每次提交上架时的价格与盘口上下文
+CREATE TABLE IF NOT EXISTS listing_submit (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  ts DATETIME NOT NULL,
+  kind VARCHAR(16) NOT NULL,
+  coins INT NOT NULL,
+  points INT NOT NULL,
+  rate INT NOT NULL,
+  book_top DOUBLE NULL,
+  book_second DOUBLE NULL,
+  avg5 DOUBLE NULL,
+  profit INT NOT NULL DEFAULT 0,
+  money INT NULL,
+  coin INT NULL,
+  PRIMARY KEY (id),
+  KEY idx_ts (ts)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 自己每张单的生命周期：首次看到在售 → 成交 / 赎回
+CREATE TABLE IF NOT EXISTS listing_track (
+  listing_id BIGINT NOT NULL,
+  kind VARCHAR(16) NOT NULL,
+  coins INT NOT NULL,
+  points INT NOT NULL,
+  rate DOUBLE NOT NULL,
+  first_seen DATETIME NULL,
+  closed_at DATETIME NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'open',
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (listing_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

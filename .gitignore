@@ -17,3 +17,4 @@ dddd_trainer/
 *.zip
 *.har
 .DS_Store
+market_log.jsonl

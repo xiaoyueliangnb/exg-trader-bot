@@ -68,7 +68,47 @@ def _ensure_schema(conn) -> None:
             "PRIMARY KEY (detail_date)"
             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         )
+        for ddl in MARKET_DDL:
+            cur.execute(ddl)
     _schema_ready = True
+
+
+MARKET_DDL = (
+    "CREATE TABLE IF NOT EXISTS market_snapshot ("
+    "id BIGINT NOT NULL AUTO_INCREMENT,"
+    "ts DATETIME NOT NULL,"
+    "payload_json LONGTEXT NOT NULL,"
+    "PRIMARY KEY (id), KEY idx_ts (ts)"
+    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+    "CREATE TABLE IF NOT EXISTS listing_submit ("
+    "id BIGINT NOT NULL AUTO_INCREMENT,"
+    "ts DATETIME NOT NULL,"
+    "kind VARCHAR(16) NOT NULL,"
+    "coins INT NOT NULL,"
+    "points INT NOT NULL,"
+    "rate INT NOT NULL,"
+    "book_top DOUBLE NULL,"
+    "book_second DOUBLE NULL,"
+    "avg5 DOUBLE NULL,"
+    "profit INT NOT NULL DEFAULT 0,"
+    "money INT NULL,"
+    "coin INT NULL,"
+    "PRIMARY KEY (id), KEY idx_ts (ts)"
+    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+    "CREATE TABLE IF NOT EXISTS listing_track ("
+    "listing_id BIGINT NOT NULL,"
+    "kind VARCHAR(16) NOT NULL,"
+    "coins INT NOT NULL,"
+    "points INT NOT NULL,"
+    "rate DOUBLE NOT NULL,"
+    "first_seen DATETIME NULL,"
+    "closed_at DATETIME NULL,"
+    "status VARCHAR(16) NOT NULL DEFAULT 'open',"
+    "updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
+    "PRIMARY KEY (listing_id)"
+    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+)
+MARKET_LOG_PATH = ROOT / "market_log.jsonl"
 
 
 def _connect():
@@ -511,6 +551,107 @@ def bump_today_listed(n: int = 1, item: Optional[dict] = None) -> None:
         listed.insert(0, item)
         detail["listed"] = listed
         save_day_detail(detail)
+
+
+def _append_market_log(kind: str, row: dict) -> None:
+    with MARKET_LOG_PATH.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"type": kind, **row}, ensure_ascii=False) + "\n")
+
+
+def save_market_snapshot(ts: str, payload: dict) -> None:
+    """每轮扫描的分档盘口快照，供以后算各档价差、成交速度。"""
+    conn = _connect()
+    if conn is None:
+        _append_market_log("snapshot", {"ts": ts, **payload})
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO market_snapshot (ts, payload_json) VALUES (%s, %s)",
+                (ts, json.dumps(payload, ensure_ascii=False, separators=(",", ":"))),
+            )
+    except Exception as exc:
+        _warn(f"写盘口快照失败（{exc}）")
+    finally:
+        conn.close()
+
+
+def save_listing_submit(row: dict) -> None:
+    """提交上架那一刻的定价与盘口上下文。"""
+    conn = _connect()
+    if conn is None:
+        _append_market_log("submit", row)
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO listing_submit (ts, kind, coins, points, rate, book_top, "
+                "book_second, avg5, profit, money, coin) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    row["ts"],
+                    row["kind"],
+                    int(row["coins"]),
+                    int(row["points"]),
+                    int(row["rate"]),
+                    row.get("book_top"),
+                    row.get("book_second"),
+                    row.get("avg5"),
+                    int(row.get("profit") or 0),
+                    row.get("money"),
+                    row.get("coin"),
+                ),
+            )
+    except Exception as exc:
+        _warn(f"写上架记录失败（{exc}）")
+    finally:
+        conn.close()
+
+
+def sync_listing_track(now: str, opened: list[dict], closed: list[dict]) -> None:
+    """自己的单：首次在「正在上架」看到记 first_seen，成交/赎回记 closed_at。
+
+    first_seen 只精确到扫描间隔，分析时会用 listing_submit 的提交时间校正。
+    """
+    conn = _connect()
+    if conn is None:
+        return
+    try:
+        with conn.cursor() as cur:
+            if opened:
+                cur.executemany(
+                    "INSERT IGNORE INTO listing_track "
+                    "(listing_id, kind, coins, points, rate, first_seen, status) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, 'open')",
+                    [
+                        (int(x["id"]), x["kind"], x["coins"], x["points"], x["rate"], now)
+                        for x in opened
+                    ],
+                )
+            if closed:
+                cur.executemany(
+                    "INSERT INTO listing_track "
+                    "(listing_id, kind, coins, points, rate, closed_at, status) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s) "
+                    "ON DUPLICATE KEY UPDATE closed_at=IFNULL(closed_at, VALUES(closed_at)), "
+                    "status=VALUES(status)",
+                    [
+                        (
+                            int(x["id"]),
+                            x["kind"],
+                            x["coins"],
+                            x["points"],
+                            x["rate"],
+                            x["when"] or None,
+                            x["status"],
+                        )
+                        for x in closed
+                    ],
+                )
+    except Exception as exc:
+        _warn(f"同步挂单跟踪失败（{exc}）")
+    finally:
+        conn.close()
 
 
 def import_json_files() -> dict[str, Any]:

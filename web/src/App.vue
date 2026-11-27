@@ -16,6 +16,11 @@ const days = computed(() => {
 });
 const yday = computed(() => overview.value?.profit?.yesterday_row || null);
 const canList = computed(() => overview.value?.can_list === true);
+const strategy = computed(() => overview.value?.strategy || {});
+const minProfit = computed(() => strategy.value.min_profit ?? 50);
+const minPerCoin = computed(() => strategy.value.min_profit_per_coin ?? 5);
+const frontDepth = computed(() => strategy.value.front_depth ?? 3);
+const listCoins = computed(() => strategy.value.list_coins ?? 10);
 const todayStats = computed(() => overview.value?.today_stats || {});
 const monthProfit = computed(() => {
   const today = String(overview.value?.today || "");
@@ -142,7 +147,7 @@ onUnmounted(() => {
         <strong :class="canList ? 'good' : 'bad'">{{
           quote ? fmt(quote.profit) : "—"
         }}</strong>
-        <em>{{ canList ? "达到 50，可上架" : "小于 50，不上架" }}</em>
+        <em>{{ canList ? `达到 ${minProfit}，可上架` : `小于 ${minProfit}，不上架` }}</em>
       </article>
       <article>
         <span>昨天利润</span>
@@ -214,9 +219,9 @@ onUnmounted(() => {
           <button :disabled="busy || !running" @click="stopBot">停止</button>
         </div>
         <p class="hint">
-          两轮间隔按时段自动：高峰 10 分钟，平峰 30 分钟。工作日高峰是中午 12–14 和晚上 18–24；周末 10:00–24:00 都算高峰。
-          卖积分不低于 5 日均，高于均价可以抢排序；卖交易币不高于 5 日均，低于均价可以抢排序。排不进第一不新增。前排同一价最多 2 份，不足就补 1 份，2–3 分钟后再补第二份；满 2 份才按高峰 10 分钟、平峰 30 分钟等。
-          有一侧落后且利润仍够 50 时，10 分钟后再看。冷却 10–20 分钟；利润小于 50 不挂。
+          两轮间隔按时段自动：高峰 10 分钟，平峰 30 分钟。工作日高峰是 12–15 和 17–24；周末 0–1 点和 10:00–24:00 算高峰（按历史成交小时分布定）。
+          卖积分不低于 5 日均，高于均价可以抢排序；卖交易币不高于 5 日均，低于均价可以抢排序。排不进第一不新增。前排同一价最多 {{ frontDepth }} 份，不足就每轮补 1 份，2–3 分钟后再补；满 {{ frontDepth }} 份才按高峰 10 分钟、平峰 30 分钟等。
+          有一侧落后且利润仍够 {{ minProfit }} 时，10 分钟后再看。冷却 10–20 分钟；利润门槛按每币 {{ minPerCoin }} 积分算（{{ listCoins }} 币一套即 {{ minProfit }}），不够不挂。
         </p>
       </div>
     </section>

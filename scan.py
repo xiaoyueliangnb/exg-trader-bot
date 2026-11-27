@@ -42,16 +42,22 @@ from db import (
     save_daily_avg,
     save_day_detail,
     save_day_profit,
+    save_listing_submit,
+    save_market_snapshot,
     save_yesterday_profit,
+    sync_listing_track,
     today_str,
 )
 from jifen import (
+    FRONT_DEPTH,
     LIST_COINS,
     MIN_LIST_PROFIT,
     listing_fee_coins,
     listing_fee_points,
+    MIN_LIST_POINTS,
     listing_quotes_competitive,
     listing_quotes_from_avg,
+    merchant_list_cycle,
     vs_avg,
 )
 
@@ -597,15 +603,17 @@ OFFPEAK_WAIT_SEC = 30 * 60
 def auto_round_wait(now: Optional[datetime] = None) -> tuple[int, str]:
     """按北京时间返回下一轮间隔（秒, 说明）。高峰 10 分钟，平峰 30 分钟。
 
-    工作日：中午 12–14、晚上 18–24 为高峰，其余半小时。
-    周末：10 点到 24 点都算高峰（上午、下午、晚上都有人），0–10 点半小时。
+    时段按自己 714 张成交单的小时分布定（analyze_market.py 第三节）：
+    工作日：12–15、17–24 为高峰，其余半小时。
+    周末：0–1 点（前一晚延续）和 10–24 点为高峰，1–10 点半小时。
     """
     now = now or datetime.now()
     hour = now.hour
     weekend = now.weekday() >= 5
     if weekend:
         bands = (
-            (0, 10, False, "周末深夜"),
+            (0, 1, True, "周末午夜"),
+            (1, 10, False, "周末深夜"),
             (10, 12, True, "周末上午"),
             (12, 14, True, "周末中午"),
             (14, 18, True, "周末下午"),
@@ -615,9 +623,9 @@ def auto_round_wait(now: Optional[datetime] = None) -> tuple[int, str]:
         bands = (
             (0, 8, False, "工作日深夜"),
             (8, 12, False, "工作日上午"),
-            (12, 14, True, "工作日中午"),
-            (14, 18, False, "工作日下午"),
-            (18, 24, True, "工作日晚上"),
+            (12, 15, True, "工作日中午"),
+            (15, 17, False, "工作日下午"),
+            (17, 24, True, "工作日晚上"),
         )
     for start, end, peak, name in bands:
         if start <= hour < end:
@@ -626,16 +634,26 @@ def auto_round_wait(now: Optional[datetime] = None) -> tuple[int, str]:
     return OFFPEAK_WAIT_SEC, "平峰"
 
 
+def min_profit_of(q: Optional[dict]) -> int:
+    if not q:
+        return MIN_LIST_PROFIT
+    return int(q.get("min_profit") or MIN_LIST_PROFIT)
+
+
+def profit_ok(q: Optional[dict]) -> bool:
+    return bool(q) and q.get("profit", 0) >= min_profit_of(q)
+
+
 def recheck_soon(q: Optional[dict]) -> bool:
     """有一侧排不进第一、但两边成交利润仍够时，10 分钟后再看盘口。"""
-    if not q or q.get("profit", 0) < MIN_LIST_PROFIT:
+    if not profit_ok(q):
         return False
     return bool(q.get("behind_coins") or q.get("behind_points"))
 
 
 def need_refill(q: Optional[dict]) -> bool:
-    """前排不足 2 份、利润仍够时，2–3 分钟后再补一份。"""
-    if not q or q.get("profit", 0) < MIN_LIST_PROFIT:
+    """前排不足 FRONT_DEPTH 份、利润仍够时，2–3 分钟后再补一份。"""
+    if not profit_ok(q):
         return False
     return bool(q.get("depth_short_coins") or q.get("depth_short_points"))
 
@@ -654,7 +672,7 @@ async def wait_auto_round(
     wait, slot = auto_round_wait()
     if refill:
         wait = random.randint(2 * 60, 3 * 60)
-        slot = f"{slot}，前排不足2份，约 {wait / 60:.0f} 分钟后再补"
+        slot = f"{slot}，前排不足{FRONT_DEPTH}份，约 {wait / 60:.0f} 分钟后再补"
     elif soon and wait > PEAK_WAIT_SEC:
         wait = PEAK_WAIT_SEC
         slot = f"{slot}，有一侧落后改 {PEAK_WAIT_SEC // 60} 分钟"
@@ -970,6 +988,157 @@ def best_sell_coins(lots: list[Lot], coins: int = LIST_COINS) -> Optional[Lot]:
     return max(priced, key=lambda x: (x.rate, x.points))
 
 
+def tier_book(lots: list[Lot], kind: str, *, higher_better: bool) -> dict[int, dict]:
+    """按币量分档：每档最优价、次优价、挂单数。"""
+    tiers: dict[int, list[float]] = {}
+    for x in lots:
+        if x.kind == kind:
+            tiers.setdefault(x.coins, []).append(x.rate)
+    out: dict[int, dict] = {}
+    for coins, rates in sorted(tiers.items()):
+        rates.sort(reverse=higher_better)
+        out[coins] = {
+            "best": round(rates[0], 2),
+            "second": round(rates[1], 2) if len(rates) > 1 else None,
+            "n": len(rates),
+        }
+    return out
+
+
+def tier_roundtrip_profit(point_best: float, coin_best: float, coins: int) -> int:
+    """该档两边都按盘口 ±1 抢第一时，一套的理论利润（未套均价护栏）。"""
+    pt_unit = int(round(point_best)) + 1
+    coin_unit = max(int(round(coin_best)) - 1, 1)
+    points_listed = max(pt_unit * coins, MIN_LIST_POINTS)
+    return int(merchant_list_cycle(points_listed, coins, coin_unit * coins)["profit"])
+
+
+def market_payload(snap: Snapshot, q: Optional[dict]) -> dict:
+    now = datetime.now()
+    point_avg = snap.buy_point_chart.avg_5d[0] if snap.buy_point_chart else None
+    coin_avg = snap.buy_coin_chart.avg_5d[0] if snap.buy_coin_chart else None
+    points_book = tier_book(snap.buy_points, KIND_BUY_POINTS, higher_better=True)
+    coins_book = tier_book(snap.buy_coins, KIND_BUY_COINS, higher_better=False)
+    mine: dict[str, dict[int, int]] = {"sell_points": {}, "sell_coin": {}}
+    for x in snap.my_open:
+        if x.kind in mine:
+            mine[x.kind][x.coins] = mine[x.kind].get(x.coins, 0) + 1
+    tier_profit = {}
+    for coins in sorted(set(points_book) & set(coins_book)):
+        profit = tier_roundtrip_profit(
+            points_book[coins]["best"], coins_book[coins]["best"], coins
+        )
+        tier_profit[coins] = {"profit": profit, "per_coin": round(profit / coins, 2)}
+    payload = {
+        "hour": now.hour,
+        "weekday": now.weekday(),
+        "money": snap.money,
+        "coin": snap.coin,
+        "point_avg": point_avg,
+        "coin_avg": coin_avg,
+        "points_book": points_book,
+        "coins_book": coins_book,
+        "mine": mine,
+        "tier_profit": tier_profit,
+    }
+    if q:
+        payload["quote"] = {
+            "coins": q.get("coins"),
+            "low_unit": q.get("low_unit"),
+            "high_unit": q.get("high_unit"),
+            "profit": q.get("profit"),
+        }
+    return payload
+
+
+def format_tiers(payload: dict) -> str:
+    def side(book: dict) -> str:
+        return " ".join(
+            f"{c}:{v['best']:.0f}×{v['n']}" for c, v in list(book.items())[:6]
+        ) or "-"
+
+    spread = " ".join(
+        f"{c}:{v['per_coin']:+.1f}" for c, v in list(payload["tier_profit"].items())[:6]
+    ) or "-"
+    return (
+        f"分档 卖积分盘口 {side(payload['points_book'])} | "
+        f"卖币盘口 {side(payload['coins_book'])} | ±1每币利润 {spread}"
+    )
+
+
+def record_market(snap: Snapshot, q: Optional[dict]) -> None:
+    """只读记录：分档盘口快照 + 自己挂单的生命周期。失败不影响上架。"""
+    now = datetime.now().isoformat(sep=" ", timespec="seconds")
+    try:
+        payload = market_payload(snap, q)
+        print(format_tiers(payload))
+        save_market_snapshot(now, payload)
+    except Exception as exc:
+        print(f"记录盘口快照失败：{exc}")
+    try:
+        opened = [
+            {
+                "id": x.listing_id,
+                "kind": x.kind,
+                "coins": x.coins,
+                "points": x.points,
+                "rate": round(x.rate, 2),
+            }
+            for x in snap.my_open
+            if x.kind in ("sell_coin", "sell_points") and x.listing_id.isdigit()
+        ]
+        closed = []
+        for x in snap.my_sold:
+            if x.kind not in ("sell_coin", "sell_points") or not x.listing_id.isdigit():
+                continue
+            if "买家" in x.text:
+                status = "sold"
+            elif "自己赎回" in x.text:
+                status = "redeemed"
+            else:
+                continue
+            closed.append(
+                {
+                    "id": x.listing_id,
+                    "kind": x.kind,
+                    "coins": x.coins,
+                    "points": x.points,
+                    "rate": round(x.rate, 2),
+                    "when": x.when.replace("T", " ") if x.when else "",
+                    "status": status,
+                }
+            )
+        sync_listing_track(now, opened, closed)
+    except Exception as exc:
+        print(f"同步挂单跟踪失败：{exc}")
+
+
+def submit_context(snap: Snapshot, q: dict, side_key: str) -> dict:
+    coins = int(q["coins"])
+    if side_key == "coins":
+        book = tier_book(snap.buy_coins, KIND_BUY_COINS, higher_better=False)
+        kind, rate, points = "sell_coin", int(q["high_unit"]), int(q["earned"])
+        avg5 = q.get("coin_avg")
+    else:
+        book = tier_book(snap.buy_points, KIND_BUY_POINTS, higher_better=True)
+        kind, rate, points = "sell_points", int(q["low_unit"]), int(q["points_listed"])
+        avg5 = q.get("point_avg")
+    tier = book.get(coins) or {}
+    return {
+        "ts": datetime.now().isoformat(sep=" ", timespec="seconds"),
+        "kind": kind,
+        "coins": coins,
+        "points": points,
+        "rate": rate,
+        "book_top": tier.get("best"),
+        "book_second": tier.get("second"),
+        "avg5": avg5,
+        "profit": int(q.get("profit") or 0),
+        "money": snap.money,
+        "coin": snap.coin,
+    }
+
+
 def greedy_roundtrip(buy_lots: list[Lot], sell_lots: list[Lot]) -> tuple[int, int, int]:
     """按单价贪心：尽量买最便宜的币，再按最高积分/币卖掉。返回 (币数, 花费积分, 收回积分)。"""
     buys = sorted(
@@ -1238,8 +1407,8 @@ def print_list_plan(snap: Snapshot, q: dict, side: str) -> list[str]:
     remain_money = money
     todo: list[str] = []
     bits: list[str] = [f"利润={q['profit']}"]
-    if q["profit"] < MIN_LIST_PROFIT:
-        print(f"计划：利润{q['profit']}＜{MIN_LIST_PROFIT}，跳过本轮")
+    if not profit_ok(q):
+        print(f"计划：利润{q['profit']}＜{min_profit_of(q)}，跳过本轮")
         return []
     if side in ("both", "coins"):
         need_coin = q["coins"]
@@ -1283,8 +1452,8 @@ def no_list_reason(q: Optional[dict]) -> str:
     """本轮没挂新单时的原因，避免一律写成余额不够或库存不够。"""
     if q is None:
         return "没有定价，本轮不上架"
-    if q["profit"] < MIN_LIST_PROFIT:
-        return f"利润{q['profit']}＜{MIN_LIST_PROFIT}，本轮不上架"
+    if not profit_ok(q):
+        return f"利润{q['profit']}＜{min_profit_of(q)}，本轮不上架"
     notes = []
     for key, label in (("skip_coins", "卖币"), ("skip_points", "卖积分")):
         why = str(q.get(key) or "")
@@ -2135,12 +2304,18 @@ async def drain_listings(
             + "、".join(labels.get(x, x) for x in todo)
             + f"（共 {len(todo)} 份，两侧分开挂）"
         )
+        contexts = [submit_context(snap, q, side_key) for side_key in todo]
         await apply_listings(
             client, snap, q, todo, execute=True, safe_code=safe_code
         )
         debit_after_listing(snap, q, todo)
         for side_key in todo:
             bump_today_listed(1, _listing_record(q, side_key))
+        for row in contexts:
+            try:
+                save_listing_submit(row)
+            except Exception as exc:
+                print(f"记录上架上下文失败：{exc}")
         print(f"本轮已挂 {len(todo)} 份，下一轮再按盘口定价")
         return len(todo)
 
@@ -2249,6 +2424,8 @@ async def run_live(args: argparse.Namespace) -> None:
                         )
                         snap.avg_cached = True
                     print_snapshot(snap, args.top, quiet=bool(args.auto))
+                    if snap.buy_points or snap.buy_coins:
+                        record_market(snap, quotes_from_snap(snap))
                     if fetch_charts and snap.buy_point_chart and snap.buy_coin_chart:
                         pa, pn = snap.buy_point_chart.avg_5d
                         ca, cn = snap.buy_coin_chart.avg_5d

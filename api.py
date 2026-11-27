@@ -18,7 +18,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from db import load_avg_latest, load_day_detail, load_dotenv, load_profit
-from jifen import LIST_COINS, MIN_LIST_PROFIT, listing_quotes_from_avg
+from jifen import (
+    FRONT_DEPTH,
+    LIST_COINS,
+    MIN_LIST_PROFIT,
+    MIN_PROFIT_PER_COIN,
+    listing_quotes_from_avg,
+)
 
 load_dotenv()
 
@@ -152,6 +158,12 @@ def overview() -> dict:
         },
         "bot": {
             "running": bot.running(),
+        },
+        "strategy": {
+            "list_coins": LIST_COINS,
+            "min_profit": MIN_LIST_PROFIT,
+            "min_profit_per_coin": MIN_PROFIT_PER_COIN,
+            "front_depth": FRONT_DEPTH,
         },
     }
 

@@ -8,6 +8,16 @@
   卖积分：上架积分数量的 5%（赎回不退，按截断取整）
 """
 
+import os
+
+
+def _env_int(name: str, default: int, lo: int = 1) -> int:
+    try:
+        return max(lo, int(os.environ.get(name, "").strip() or default))
+    except ValueError:
+        return default
+
+
 # 上架交易币：10 积分 / 币
 LISTING_FEE_PER_COIN = 10
 MIN_LIST_COINS = 10
@@ -16,8 +26,16 @@ MIN_LIST_COINS = 10
 LIST_POINTS_FEE_RATE = 0.05
 MIN_LIST_POINTS = 5000
 LIST_COINS = 10  # 商家每套上架数量；单价按 5 日均取整
-MIN_LIST_PROFIT = 50  # 两边成交利润低于这个数不上架
-FRONT_DEPTH = 2  # 同一前排价最多留这么多份，给大户连买，卖不掉也不再堆
+MIN_PROFIT_PER_COIN = _env_int("MIN_PROFIT_PER_COIN", 5)  # 每币至少赚这么多才上架
+FRONT_DEPTH = _env_int("FRONT_DEPTH", 3)  # 同一前排价最多留这么多份，给大户连买，卖不掉也不再堆
+
+
+def min_list_profit(coins=LIST_COINS) -> int:
+    """利润门槛按币数线性放大：10 币档 50，50 币档 250。"""
+    return int(coins) * MIN_PROFIT_PER_COIN
+
+
+MIN_LIST_PROFIT = min_list_profit(LIST_COINS)  # 两边成交利润低于这个数不上架
 
 
 def listing_fee_coins(trade_coins, fee_per_coin=LISTING_FEE_PER_COIN):
@@ -124,6 +142,7 @@ def merchant_list_cycle(points_listed, coins, coin_list_price):
         "in_effective": spent / coins if coins else 0.0,
         "out_effective": (coin_list_price - fee_out) / coins if coins else 0.0,
         "profit": profit,
+        "min_profit": min_list_profit(coins),
     }
 
 
@@ -159,7 +178,7 @@ def decide_list_side(market_rate, my_rates, avg5, *, direction):
     排不进第一就本轮不新增。
     前排同一价最多留 FRONT_DEPTH 份：不足就本轮补 1 份，满了才维持。
     返回 (unit, note, skip_reason, behind, depth_short)。
-    depth_short 表示本轮挂完后前排仍不足 2 份，应很快再补。
+    depth_short 表示本轮挂完后前排仍不足 FRONT_DEPTH 份，应很快再补。
     """
     avg_u = list_unit_from_avg(avg5) if avg5 is not None else None
     counts = _rate_counts(my_rates)
@@ -187,7 +206,7 @@ def decide_list_side(market_rate, my_rates, avg5, *, direction):
 
     top = int(round(float(market_rate)))
     have_top = counts.get(top, 0)
-    # 自己已在第一，且这个价没有越过均价限制，才在原价上补到 2 份。
+    # 自己已在第一，且这个价没有越过均价限制，才在原价上补到 FRONT_DEPTH 份。
     top_allowed = True
     if avg_u is not None:
         top_allowed = top >= avg_u if direction == "over" else top <= avg_u
@@ -245,7 +264,7 @@ def listing_quotes_competitive(
     先按盘口 ±1，再用 5 日均卡住亏的那一侧：
       卖积分不低于均价（更高可以），卖交易币不高于均价（更低可以）
       改完仍排不进第一则该侧不新增
-      前排同一价不足 2 份则补 1 份，满 2 份才维持
+      前排同一价不足 FRONT_DEPTH 份则补 1 份，满了才维持
     """
     low_unit, low_note, skip_points, behind_points, short_points = decide_list_side(
         market_point_rate,
