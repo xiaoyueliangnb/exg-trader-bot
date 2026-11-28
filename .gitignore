@@ -21,3 +21,5 @@ market_log.jsonl
 logs/
 docs/
 PLAN.md
+CAPTCHA_TRAIN.md
+prepare_captcha_dataset.py

@@ -12,14 +12,12 @@
 ├── jifen.py                    # 利润模型、手续费公式与双边定价策略
 ├── api.py                      # FastAPI 控制台后端（托管前端、启停自动挂单、输出日志与统计）
 ├── db.py                       # MySQL 读写层（无库时自动回退本地 JSON 缓存）
-├── ocr_captcha.py              # 验证码 OCR 识别（基于 ddddocr，支持自定义训练模型）
-├── prepare_captcha_dataset.py  # 验证码训练样本整理脚本
+├── ocr_captcha.py              # 验证码 OCR 识别
 ├── analyze_market.py           # 分档盘口 / 成交速度 / 成交时段分析（只读）
 ├── schema.sql                  # MySQL 建表脚本
 ├── deploy.sh                   # Ubuntu/Debian + systemd 一键部署脚本
 ├── requirements.txt            # Python 依赖
 ├── .env.example                # 环境变量模板
-├── CAPTCHA_TRAIN.md            # 自定义验证码模型训练说明
 └── web/                        # Vue 3 + Vite 控制台前端
 ```
 
@@ -68,7 +66,7 @@
 ### 4. 验证码与断线容错
 
 - **登录协议**：先通过 `/Account/Csrf` + `/Account/Login` 获取登录 Cookie，再强制 HTTP/1.1 握手连接 `wss://<host>/Client/Ws`。
-- **验证码处理**：自动调用 `ocr_captcha.py` 识别，最多连续重试 **3 次**；全部失败或服务端提示验证码频繁时，暂停 **10 分钟**后重新登录。识别错误的图片会自动归档到 `captcha_wrong/`，通过的样本归档到 `captcha_ok/`，便于后续微调模型（参见 `CAPTCHA_TRAIN.md`）。
+- **验证码处理**：自动调用 `ocr_captcha.py` 识别，最多连续重试 **3 次**；全部失败或服务端提示验证码频繁时，暂停 **10 分钟**后重新登录。
 - **异常自愈**：`--auto` 模式下遇到网络抖动、握手被拒或协议异常不会退出，自动关闭连接并短等重连。
 
 ### 5. 利润核算（FIFO）
