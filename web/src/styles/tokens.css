@@ -1,0 +1,78 @@
+:root {
+  --bg: #10140f;
+  --bg-2: #171d15;
+  --panel: #1c2419;
+  --line: #2c3826;
+  --text: #e7eadf;
+  --muted: #8b947c;
+  --gold: #d4b06a;
+  --mint: #8fbf7a;
+  --warn: #d08a5a;
+  --bad: #c45c4a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app { height: 100%; margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+button, input { font: inherit; }
+
+a { color: inherit; text-decoration: none; }
+
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+::selection { background: rgba(212, 176, 106, 0.35); }
+
+.n-config-provider { height: 100%; }
+
+.good { color: var(--mint); }
+.bad { color: var(--bad); }
+.warn { color: var(--warn); }
+.muted { color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; }
+
+.banner {
+  border: 1px solid var(--bad);
+  color: var(--bad);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 0 0 12px;
+}
+
+.banner.warn { border-color: var(--warn); color: var(--warn); }
+
+.banner button {
+  margin-left: 8px;
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.l-bad { color: var(--bad); }
+.l-warn { color: var(--warn); }
+.l-good { color: var(--mint); }
+.l-dim { color: var(--muted); }
+
+.ratio-track {
+  display: inline-block;
+  width: 64px;
+  height: 6px;
+  margin-right: 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.ratio-track > i { display: block; height: 100%; background: var(--mint); }

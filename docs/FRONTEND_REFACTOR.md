@@ -8,10 +8,11 @@
 ## 零、必读约束（违反会出事）
 
 1. **只动前端**：`web/` 目录。后端 `api.py` 只允许做第五节列出的「可选接口补充」，且不能改变现有接口的返回字段。**绝不改** `scan.py`、`jifen.py`、`db.py` 的交易逻辑。
-2. **机器人在跑真钱交易**。前端构建（`npm run build`）只替换 `web/dist`，**不需要也不要重启服务**。只有改了 `api.py` 才需要重启，并且必须等机器人空闲（见第七节）。
-3. **不要碰** `.env`、数据库数据、`jifen.service`、git 配置。提交用 `git -c user.name=... -c user.email=...`（见第七节）。
-4. 交易规则在界面上的描述必须准确（见第四节「业务口径」），不能为了好看改写意思。
-5. 每个阶段完成后，旧功能一个都不能少（第三节的功能清单逐项核对）。
+2. **机器人在跑真钱交易**。前端构建只替换 `web/dist`，**不需要也不要重启服务**。只有改了 `api.py` 才需要重启，并且必须等机器人空闲（见第七节）。
+3. **不要在这台云主机上执行 `npm install`、`npm run build`、`vue-tsc`、`vite build`。** 机器内存不够，编译会把系统卡死。源码推到 GitHub 后，在自己的电脑上编译，再把 `web/dist` 传回主机。
+4. **不要碰** `.env`、数据库数据、`jifen.service`、git 配置。提交用 `git -c user.name=... -c user.email=...`（见第七节）。
+5. 交易规则在界面上的描述必须准确（见第四节「业务口径」），不能为了好看改写意思。
+6. 每个阶段完成后，旧功能一个都不能少（第三节的功能清单逐项核对）。
 
 ---
 
@@ -403,22 +404,24 @@ web/src/
 
 ## 七、开发、部署与回滚
 
-**本地开发**（在服务器上）：
+**在自己的电脑上编译**（不要在云主机上跑）：
 
 ```bash
-cd /home/ubuntu/server/exg/jifen/web
+git pull
+cd web
 npm install
-npm run dev -- --host 127.0.0.1   # 5173，已配置 /api 代理到 8787
+npm run build          # 产物在 web/dist
 ```
 
-**部署前端**（不重启服务）：
+`npm run dev` 也可以在自己电脑上跑，`/api` 代理的是本机 8787。要对着云主机的接口开发时，把 `web/vite.config.ts` 里的代理临时改成云主机地址，改完不要提交。
+
+**把产物传回云主机**（不重启服务，刷新浏览器即可）：
 
 ```bash
-cd /home/ubuntu/server/exg/jifen/web
-npm run build          # 产物写入 web/dist，api.py 直接托管，刷新浏览器即可
+rsync -av --delete web/dist/ ubuntu@43.142.117.241:/home/ubuntu/server/exg/jifen/web/dist/
 ```
 
-线上地址：`http://43.142.117.241:8788/`（1Panel 反代到 `127.0.0.1:8787`）。
+线上地址：`http://43.142.117.241:8788/`（1Panel 反代到 `127.0.0.1:8787`）。`web/dist` 不进 Git。
 
 **改了 `api.py` 才需要重启**，且必须等机器人空闲：
 
@@ -441,7 +444,7 @@ git -c user.name="xiaoyueliangnb" -c user.email="xiaoyueliangnb@users.noreply.gi
 git push
 ```
 
-**回滚**：`git revert <commit>` 后 `cd web && npm run build`。建议每阶段一个提交，回滚粒度清晰。
+**回滚**：`git revert <commit>` 后在自己电脑上重新 `npm run build`，再把 `web/dist` 传回主机。不要在云主机上编译。
 
 ---
 

@@ -37,8 +37,9 @@ if [ -f "$ROOT/schema.sql" ] && grep -q '^MYSQL_DATABASE=' "$ROOT/.env" 2>/dev/n
 fi
 
 if [ ! -f "$ROOT/web/dist/index.html" ]; then
-  need npm
-  (cd "$ROOT/web" && npm install && npm run build)
+  echo "缺少 web/dist/index.html。这台云主机内存不够，不要在这里执行 npm run build。"
+  echo "请在本地电脑进入 web 目录执行 npm install && npm run build，再把 web/dist 传到本目录。"
+  exit 1
 fi
 
 cat > "$ROOT/jifen.service" <<EOF

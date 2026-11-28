@@ -164,7 +164,7 @@ sudo bash deploy.sh
 
 脚本会自动完成：
 1. 创建 `.venv` 并安装 `requirements.txt` 依赖；
-2. 如未构建前端，自动在 `web/` 下执行 `npm install && npm run build`；
+2. 要求 `web/dist/index.html` 已经存在（前端在自己的电脑上构建后上传，不要在云主机上 `npm run build`）；
 3. 生成并启用 `jifen.service`（默认监听 `127.0.0.1:8787`）。
 
 > 注意：`deploy.sh` 里 `systemd` 服务默认运行用户为 `ubuntu`，若服务器用户名不同，请先修改脚本中的 `User=` / `Group=`。
@@ -177,8 +177,9 @@ python3 -m venv .venv
 .venv/bin/pip install -U pip
 .venv/bin/pip install -r requirements.txt
 
-# 2. 构建前端静态资源
-cd web && npm install && npm run build && cd ..
+# 2. 前端静态资源 web/dist
+#    在自己的电脑上执行 npm install && npm run build，再把 web/dist 传到服务器。
+#    不要在这台云主机上编译，内存不够，会把系统卡死。
 
 # 3. 启动 Web 控制台
 .venv/bin/python api.py
