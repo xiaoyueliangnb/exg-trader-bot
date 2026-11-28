@@ -16,8 +16,6 @@ sudo bash deploy.sh
 
 `deploy.sh` 会建虚拟环境、安装 Python 依赖，并注册 `jifen.service`（默认 `ubuntu` 用户，监听 `127.0.0.1:8787`）。用 Nginx 或 1Panel 反代到这个地址。
 
-前端不要在云主机上编译。在自己电脑的 `web/` 里执行 `npm install && npm run build`，再把 `web/dist` 传到服务器。`deploy.sh` 发现没有 `web/dist/index.html` 会直接退出。
-
 公网访问时在 `.env` 设置 `CONSOLE_TOKEN`。`BOT_AUTOSTART=1` 时服务启动会自动跑挂单。
 
 ## 运行
