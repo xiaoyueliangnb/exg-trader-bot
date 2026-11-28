@@ -229,7 +229,7 @@ function tierClass(row: TierStat) {
             <template v-else>
               <span v-if="group.add.length">建议加为高峰 <b>{{ group.add.map(pad).join("、") }}</b> 点；</span>
               <span v-if="group.drop.length">成交偏少可降为平峰 <b>{{ group.drop.map(pad).join("、") }}</b> 点。</span>
-              <span class="muted">相差 2 个小时以上再改，见 PLAN.md。</span>
+              <span class="muted">相差 2 个小时以上再改。</span>
             </template>
           </p>
         </div>
@@ -263,7 +263,7 @@ function tierClass(row: TierStat) {
 
       <section-card title="分档盘口" :sub="`快照 ${data.tiers.snapshots} 次 · 数值为期间中位数`">
         <p class="note">
-          开放条件（PLAN.md）：两边同时有盘 ≥ 50%，且 ±1 每币利润中位 ≥ {{ data.min_profit_per_coin }}。
+          开放条件：两边同时有盘 ≥ 50%，且 ±1 每币利润中位 ≥ {{ data.min_profit_per_coin }}。
           ±1 每币利润 = 两边都按该档盘口第一 ±1 挂、扣双边手续费后每币赚多少（未套均价护栏）。
         </p>
         <n-data-table

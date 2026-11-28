@@ -209,8 +209,6 @@ python3 -m venv .venv
 >
 > 控制台对公网开放时，务必在 `.env` 设置 `CONSOLE_TOKEN`，浏览器首次访问需输入该口令。
 
-后续计划与待办见 [`PLAN.md`](PLAN.md)。
-
 ### 2. 命令行运行（`scan.py`）
 
 ```bash

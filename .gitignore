@@ -19,3 +19,5 @@ dddd_trainer/
 .DS_Store
 market_log.jsonl
 logs/
+docs/
+PLAN.md
